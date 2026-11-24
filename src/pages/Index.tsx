@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import HomeDashboard from "@/components/HomeDashboard";
 import { Flag, Sparkles, Trophy, Send, Menu, LayoutGrid, ScanLine, CarFront, CalendarDays, Check, ExternalLink, ChevronRight } from "lucide-react";
 import "../App.css";
 
@@ -11,9 +12,6 @@ const drivers: Driver[] = [
   {name:"Ayrton Senna",clue:"Three-time Brazilian world champion celebrated for wet-weather skill.",series:"F1"},{name:"Lewis Hamilton",clue:"Seven-time world champion and record-setting British driver.",series:"F1"},{name:"Michael Schumacher",clue:"German seven-time champion who dominated with Ferrari.",series:"F1"},{name:"Max Verstappen",clue:"Dutch world champion known for aggressive precision.",series:"F1"},{name:"Fernando Alonso",clue:"Two-time Spanish world champion with remarkable longevity.",series:"F1"},{name:"Sebastian Vettel",clue:"German four-time champion who won titles with Red Bull.",series:"F1"},{name:"Charles Leclerc",clue:"Monégasque Ferrari driver who grew up racing in Monaco.",series:"F1"},{name:"Lando Norris",clue:"British McLaren driver known for speed and a playful personality.",series:"F1"},{name:"Jackie Stewart",clue:"Three-time Scottish champion and influential safety advocate.",series:"F1"},{name:"Alain Prost",clue:"Four-time French champion nicknamed The Professor.",series:"F1"},
 ];
 const tabs = [{name:"Overview",view:"Home",icon:LayoutGrid},{name:"Ask Trackside",view:"Trackside AI",icon:Sparkles},{name:"Driver garage",view:"Garage",icon:CarFront},{name:"Photo challenge",view:"Photo challenge",icon:ScanLine},{name:"Race hub",view:"Schedule",icon:CalendarDays}];
-type ResultCard = { race: string | null; date: string | null; winner: string | null; leader: string | null; champion: string | null; source?: string };
-type RaceResults = Record<"cup" | "oReilly" | "trucks" | "f1", ResultCard>;
-const resultLabels: Record<keyof RaceResults, string> = {cup:"NASCAR CUP SERIES",oReilly:"NASCAR O'REILLY SERIES",trucks:"NASCAR CRAFTSMAN TRUCK SERIES",f1:"FORMULA 1"};
 const chooseDriver = (series: Series, previous?: string) => { const pool=drivers.filter((item)=>item.series===series&&item.name!==previous); return pool[Math.floor(Math.random()*pool.length)]; };
 
 const localReply = (text: string, series: Series) => {
@@ -31,31 +29,6 @@ const localReply = (text: string, series: Series) => {
   return `I can help with ${series} drivers, rules, tracks, race craft, and history. What part are you curious about?`;
 };
 
-const WinnerCard = ({ seriesKey, item, loading }: { seriesKey: keyof RaceResults; item?: ResultCard; loading: boolean }) => {
-  const [photo, setPhoto] = useState("");
-  useEffect(() => {
-    let cancelled = false;
-    setPhoto("");
-    if (!item?.winner) return;
-    fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(item.winner)}`)
-      .then((response) => response.ok ? response.json() : Promise.reject())
-      .then((data: { thumbnail?: { source?: string } }) => { if (!cancelled) setPhoto(data.thumbnail?.source || ""); })
-      .catch(() => { if (!cancelled) setPhoto(""); });
-    return () => { cancelled = true; };
-  }, [item?.winner]);
-
-  return <article className="result-card" key={seriesKey}>
-    <div className="result-label">{resultLabels[seriesKey]}</div>
-    {photo ? <img className="winner-photo" src={photo} alt={`Photo of ${item?.winner}`} onError={() => setPhoto("")}/> : <div className="winner-photo-placeholder"><Flag size={25}/></div>}
-    <h2>{item?.winner || (loading ? "Loading latest result…" : "Result currently unavailable")}</h2>
-    <p className="result-race">{item?.race || "Latest completed race"}{item?.date ? ` · ${new Date(item.date).toLocaleDateString()}` : ""}</p>
-    <div className="result-divider"/><div className="champion-label">{item?.champion ? "LAST SEASON CHAMPION" : "CHAMPIONSHIP LEADER"}</div>
-    <b className="champion-name">{item?.champion || item?.leader || (loading ? "Loading standings…" : "Standings currently unavailable")}</b>
-    {item?.leader && item?.champion && <p className="current-leader">Current points leader: {item.leader}</p>}
-    {item?.source && <a className="result-source" href={item.source} target="_blank" rel="noreferrer">OFFICIAL RESULTS <ExternalLink size={13}/></a>}
-  </article>;
-};
-
 const Index = () => {
   const [active,setActive]=useState("Overview");
   const [menuOpen,setMenuOpen]=useState(false);
@@ -70,16 +43,7 @@ const Index = () => {
   const messages=conversations[series];
   const chat=chatDrafts[series];
   const setChat=(value:string)=>setChatDrafts((current)=>({...current,[series]:value}));
-  const [raceResults,setRaceResults]=useState<RaceResults|null>(null);
-  const [resultsLoading,setResultsLoading]=useState(true);
 
-  useEffect(()=>{
-    fetch("/api/results")
-      .then((response)=>response.ok?response.json():Promise.reject())
-      .then((data:RaceResults)=>setRaceResults(data))
-      .catch(()=>setRaceResults(null))
-      .finally(()=>setResultsLoading(false));
-  },[]);
 
   useEffect(()=>{
     let cancelled=false;
@@ -120,7 +84,7 @@ const Index = () => {
     </aside>
     <main className="main-area">
       <header className="topbar"><button className="mobile-menu" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen((open)=>!open)}><Menu/></button><div className="top-intro">Your all-access pass to motorsport</div><div className="series-toggle" role="tablist" aria-label="Choose racing series"><button role="tab" aria-selected={series==="NASCAR"} className={series==="NASCAR"?"active":""} onClick={()=>changeSeries("NASCAR")}>▰ &nbsp; NASCAR</button><button role="tab" aria-selected={series==="F1"} className={series==="F1"?"active":""} onClick={()=>changeSeries("F1")}>F1 &nbsp; FORMULA 1</button></div></header>
-      {active==="Home"&&<div className="page-content tab-page results-page"><div className="welcome-row"><div><div className="eyebrow"><span/> {series==="NASCAR"?"NASCAR PADDOCK":"FORMULA 1 PADDOCK"}</div><h1>{series==="NASCAR"?"Latest NASCAR winners":"Latest Formula 1 winner"}</h1><p>Latest race winners and championship names for the selected series.</p></div></div><div className="results-grid">{(series==="NASCAR"?["cup","oReilly","trucks"]:["f1"]).map((key)=>{const seriesKey=key as keyof RaceResults;return <WinnerCard key={key} seriesKey={seriesKey} item={raceResults?.[seriesKey]} loading={resultsLoading}/>;})}</div><button className="results-refresh" onClick={()=>{setResultsLoading(true);fetch("/api/results").then((response)=>response.ok?response.json():Promise.reject()).then((data:RaceResults)=>setRaceResults(data)).catch(()=>setRaceResults(null)).finally(()=>setResultsLoading(false));}}>REFRESH RESULTS</button></div>}
+      {active==="Home"&&<HomeDashboard series={series} driver={driver} photo={photo} guess={guess} answer={result} collectedCount={garageForSeries.length} messages={messages} chat={chat} onGuessChange={setGuess} onSubmitGuess={submitGuess} onNextDriver={()=>{setDriver(chooseDriver(series,driver.name));setResult("");}} onChatChange={setChat} onSendMessage={sendMessage}/> }
       {active==="Photo challenge"&&<div className="page-content tab-page"><div className="welcome-row"><div><div className="eyebrow"><span/> {series} PADDOCK</div><h1>Photo challenge</h1><p>Recognize the driver. Type their name to collect them.</p></div></div><section className="quiz-card standalone-card"><div className="quiz-top"><div><div className="eyebrow"><Sparkles size={14}/> DRIVER CHALLENGE · {series}</div><h2>Who is this <em>driver?</em></h2></div><button className="text-link" onClick={()=>{setDriver(chooseDriver(series,driver.name));setResult("");}}>NEXT DRIVER <ChevronRight size={15}/></button></div><div className={`driver-photo ${photo?"has-photo":""}`} style={photo?{backgroundImage:`linear-gradient(0deg,rgba(18,20,23,.82),transparent 65%),url("${photo}")`}:undefined}>{photo?<span className="photo-credit">REAL DRIVER PHOTO · WIKIPEDIA</span>:<div className="photo-loading"><Flag size={35}/><span>Loading a real {series} driver photo…</span><small>If images are blocked, try the next driver.</small></div>}<div className="photo-clue"><span>HINT</span><p>{driver.clue}</p></div></div><form className="guess-form" onSubmit={submitGuess}><input value={guess} onChange={(event)=>setGuess(event.target.value)} placeholder="Type the driver's full name..." aria-label="Type the driver's full name"/><button type="submit">SUBMIT GUESS <ChevronRight size={16}/></button></form>{result&&<div className={`answer-note ${result.startsWith("Correct")?"correct":""}`}>{result.startsWith("Correct")&&<Check size={15}/>} {result}</div>}<div className="quiz-foot"><span>Correct guesses are added to your Garage</span><span>{garage.length} COLLECTED</span></div></section></div>}
       {active==="Garage"&&<div className="page-content tab-page"><div className="welcome-row"><div><div className="eyebrow"><span/> YOUR {series} COLLECTION</div><h1>{series} garage</h1><p>Your correctly guessed {series} drivers, saved on this device.</p></div></div>{garageForSeries.length?<div className="collection-grid">{garageForSeries.map((name)=><article className="collection-card" key={name}><div className="driver-initial">{name.split(" ").map((part)=>part[0]).join("")}</div><div><b>{name}</b><span>{drivers.find((item)=>item.name===name)?.series||"MOTORSPORT"} · COLLECTED</span></div><Trophy size={18}/></article>)}</div>:<div className="empty-state"><CarFront size={36}/><h2>Your {series} garage is waiting</h2><p>Guess a {series} driver in Photo Challenge to collect them here.</p><button className="watch-button" onClick={()=>navigate("Photo challenge")}>GO TO PHOTO CHALLENGE</button></div>}</div>}
       {active==="Schedule"&&<div className="page-content tab-page"><div className="welcome-row"><div><div className="eyebrow"><span/> RACE CALENDAR</div><h1>Race schedule</h1><p>Schedule provided by DD12 Fans.</p></div><a className="watch-button schedule-link" href={scheduleUrl} target="_blank" rel="noreferrer">OPEN SCHEDULE <ExternalLink size={15}/></a></div><section className="schedule-frame-wrap"><iframe className="schedule-frame" src={scheduleUrl} title="DD12 Fans race schedule" loading="lazy"/><div className="frame-fallback">If the schedule doesn't load inside the app, <a href={scheduleUrl} target="_blank" rel="noreferrer">open it in a new tab <ExternalLink size={13}/></a>.</div></section></div>}
