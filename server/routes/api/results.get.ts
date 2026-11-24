@@ -1,53 +1,68 @@
 import { defineHandler } from "nitro";
 
-type Competitor = { winner?: boolean; athlete?: { displayName?: string }; team?: { displayName?: string }; displayName?: string; order?: number; rank?: number };
-type Event = { name?: string; date?: string; status?: { type?: { completed?: boolean } }; competitions?: { competitors?: Competitor[] }[] };
-type Scoreboard = { events?: Event[] };
-type StandingEntry = { athlete?: { displayName?: string }; team?: { displayName?: string }; stats?: { name?: string; value?: number; displayValue?: string }[] };
-type Standings = { standings?: { entries?: StandingEntry[] }[]; children?: { standings?: { entries?: StandingEntry[] } }[] };
-const leagues = { cup: "nascar-cup", oReilly: "nascar-xfinity", trucks: "nascar-truck", f1: "f1" };
-const base = "https://site.api.espn.com/apis/site/v2/sports/racing";
+type ResultCard = { race: string | null; date: string | null; winner: string | null; champion: string | null; leader: string | null; source: string };
+type SeriesKey = "cup" | "oReilly" | "trucks" | "f1";
+const year = new Date().getUTCFullYear();
+const series: Record<SeriesKey, { results: string; standings: string }> = {
+  cup: {
+    results: `https://www.nascar.com/results/racecenter/${year}/nascar-cup-series/`,
+    standings: "https://www.nascar.com/standings/",
+  },
+  oReilly: {
+    results: `https://www.nascar.com/results/racecenter/${year}/nascar-xfinity-series/`,
+    standings: "https://www.nascar.com/standings/",
+  },
+  trucks: {
+    results: `https://www.nascar.com/results/racecenter/${year}/nascar-craftsman-truck-series/`,
+    standings: "https://www.nascar.com/standings/",
+  },
+  f1: {
+    results: `https://www.formula1.com/en/results/${year}/races`,
+    standings: `https://www.formula1.com/en/results/${year - 1}/drivers`,
+  },
+};
 
-async function getJson<T>(url: string): Promise<T | null> {
+async function getPage(url: string) {
   try {
-    const response = await fetch(url, { headers: { Accept: "application/json" } });
-    if (!response.ok) return null;
-    return await response.json() as T;
+    const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 Trackside racing results", Accept: "text/html" } });
+    if (!response.ok) return "";
+    return await response.text();
   } catch {
-    return null;
+    return "";
   }
 }
 
-function firstStanding(data: Standings | null) {
-  const entries = data?.standings?.entries ?? data?.children?.flatMap((child) => child.standings?.entries ?? []) ?? [];
-  const first = entries[0];
-  return first?.athlete?.displayName ?? first?.team?.displayName ?? null;
+function cleanText(value: string) {
+  return value.replace(/<[^>]*>/g, " ").replace(/&nbsp;|&#160;/gi, " ").replace(/&amp;/gi, "&").replace(/&#x27;|&#39;|&apos;/gi, "'").replace(/&quot;/gi, '"').replace(/\s+/g, " ").trim();
+}
+
+function rowsFrom(html: string) {
+  return [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)].map((match) => [...match[1].matchAll(/<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((cell) => cleanText(cell[1])).filter(Boolean)).filter((row) => row.length > 1);
+}
+
+function raceResult(html: string, key: SeriesKey) {
+  const rows = rowsFrom(html);
+  if (key === "f1") {
+    const row = rows.find((cells) => cells.length >= 3 && /\b[A-Z][a-z]+\s+[A-Z][a-z]+\b/.test(cells[2]));
+    return { race: row?.[1] ?? null, date: row?.[0] ?? null, winner: row?.[2] ?? null };
+  }
+  const row = rows.find((cells) => /^(1|1st|P1)$/i.test(cells[0]) && cells.length >= 2 && /[A-Za-z]/.test(cells.at(-1) ?? ""));
+  const name = row?.slice(1).reverse().find((cell) => /[A-Za-z]{2,}\s+[A-Za-z]{2,}/.test(cell));
+  const title = cleanText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").replace(/\s*\|\s*NASCAR.*$/i, "").trim();
+  return { race: title || null, date: null, winner: name ?? null };
+}
+
+function firstStanding(html: string) {
+  const rows = rowsFrom(html);
+  const row = rows.find((cells) => /^(1|1st|P1)$/i.test(cells[0]) && cells.length > 1);
+  return row?.slice(1).reverse().find((cell) => /[A-Za-z]{2,}\s+[A-Za-z]{2,}/.test(cell)) ?? null;
 }
 
 export default defineHandler(async () => {
-  const year = new Date().getUTCFullYear();
-  const entries = await Promise.all(Object.entries(leagues).map(async ([key, league]) => {
-    const [board, standings, previousStandings] = await Promise.all([
-      getJson<Scoreboard>(`${base}/${league}/scoreboard?limit=100`),
-      getJson<Standings>(`${base}/${league}/standings?season=${year}`),
-      getJson<Standings>(`${base}/${league}/standings?season=${year - 1}&seasontype=3`),
-    ]);
-    const finished = (board?.events ?? []).filter((event) => event.status?.type?.completed && event.competitions?.[0]?.competitors?.length);
-    finished.sort((a, b) => Date.parse(b.date ?? "") - Date.parse(a.date ?? ""));
-    const latest = finished[0];
-    const competitors = latest?.competitions?.[0]?.competitors ?? [];
-    const winner = competitors.find((competitor) => competitor.winner)?.athlete?.displayName
-      ?? competitors.find((competitor) => competitor.winner)?.team?.displayName
-      ?? competitors.find((competitor) => competitor.order === 1 || competitor.rank === 1)?.athlete?.displayName
-      ?? competitors.find((competitor) => competitor.order === 1 || competitor.rank === 1)?.team?.displayName
-      ?? null;
-    return [key, {
-      race: latest?.name ?? null,
-      date: latest?.date ?? null,
-      winner,
-      leader: firstStanding(standings),
-      champion: firstStanding(previousStandings),
-    }] as const;
+  const entries = await Promise.all(Object.entries(series).map(async ([key, urls]) => {
+    const [resultsHtml, standingsHtml] = await Promise.all([getPage(urls.results), getPage(urls.standings)]);
+    const parsed = raceResult(resultsHtml, key as SeriesKey);
+    return [key, { ...parsed, champion: firstStanding(standingsHtml), leader: null, source: urls.results }] as const;
   }));
-  return Object.fromEntries(entries);
+  return Object.fromEntries(entries) as Record<SeriesKey, ResultCard>;
 });

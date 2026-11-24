@@ -11,10 +11,25 @@ const drivers: Driver[] = [
   {name:"Ayrton Senna",clue:"Three-time Brazilian world champion celebrated for wet-weather skill.",series:"F1"},{name:"Lewis Hamilton",clue:"Seven-time world champion and record-setting British driver.",series:"F1"},{name:"Michael Schumacher",clue:"German seven-time champion who dominated with Ferrari.",series:"F1"},{name:"Max Verstappen",clue:"Dutch world champion known for aggressive precision.",series:"F1"},{name:"Fernando Alonso",clue:"Two-time Spanish world champion with remarkable longevity.",series:"F1"},{name:"Sebastian Vettel",clue:"German four-time champion who won titles with Red Bull.",series:"F1"},{name:"Charles Leclerc",clue:"Monégasque Ferrari driver who grew up racing in Monaco.",series:"F1"},{name:"Lando Norris",clue:"British McLaren driver known for speed and a playful personality.",series:"F1"},{name:"Jackie Stewart",clue:"Three-time Scottish champion and influential safety advocate.",series:"F1"},{name:"Alain Prost",clue:"Four-time French champion nicknamed The Professor.",series:"F1"},
 ];
 const tabs = [{name:"Overview",view:"Home",icon:LayoutGrid},{name:"Ask Trackside",view:"Trackside AI",icon:Sparkles},{name:"Driver garage",view:"Garage",icon:CarFront},{name:"Photo challenge",view:"Photo challenge",icon:ScanLine},{name:"Race hub",view:"Schedule",icon:CalendarDays}];
-type ResultCard = { race: string | null; date: string | null; winner: string | null; leader: string | null; champion: string | null };
+type ResultCard = { race: string | null; date: string | null; winner: string | null; leader: string | null; champion: string | null; source?: string };
 type RaceResults = Record<"cup" | "oReilly" | "trucks" | "f1", ResultCard>;
 const resultLabels: Record<keyof RaceResults, string> = {cup:"NASCAR CUP SERIES",oReilly:"NASCAR O'REILLY SERIES",trucks:"NASCAR CRAFTSMAN TRUCK SERIES",f1:"FORMULA 1"};
 const chooseDriver = (series: Series, previous?: string) => { const pool=drivers.filter((item)=>item.series===series&&item.name!==previous); return pool[Math.floor(Math.random()*pool.length)]; };
+
+const localReply = (text: string, series: Series) => {
+  const question = text.toLowerCase().trim();
+  if (/^(hi|hey|hello|hiya|yo|sup)\b/.test(question)) return "Hey! I'm Trackside, your racing co-pilot. What are you watching today?";
+  if (/\b(idk|i don't know|i dont know|not sure|no idea)\b/.test(question)) return "No problem! Pick one: want to hear about a legendary driver, understand a race rule, or learn how pit strategy works?";
+  if (/\b(thanks|thank you|thx)\b/.test(question)) return "You're welcome! Keep the questions coming — racing always has another story.";
+  const mentioned = drivers.find((driver) => question.includes(driver.name.toLowerCase()));
+  if (mentioned) return `${mentioned.name}: ${mentioned.clue} Want to know about their career, biggest wins, or rivals?`;
+  if (/\b(pit|stop|tire|tyre)\b/.test(question)) return series === "NASCAR" ? "NASCAR pit stops usually involve changing four tires and adding fuel. Timing a stop around a caution can matter as much as the crew's speed." : "In Formula 1, crews change all four tires in seconds. Teams consider tire wear, traffic, and safety-car timing.";
+  if (/\b(flag|yellow|caution|red flag|safety car)\b/.test(question)) return series === "NASCAR" ? "A yellow flag means a caution: the field slows and bunches up. A red flag stops the race for safety or weather." : "In F1, yellow flags warn of danger and require drivers to slow down; a red flag suspends the session. A safety car controls the field while the track is cleared.";
+  if (/\b(point|champion|championship|standings|winner|result)\b/.test(question)) return "For current results, check Overview — Trackside gets results from official series pages when available.";
+  if (/\b(rule|stage|playoff|drs|overtake|ers)\b/.test(question)) return series === "NASCAR" ? "NASCAR uses stage breaks and a playoff format. Rules can change by season; name a specific rule and I'll explain it." : "F1 awards points across Grand Prix weekends. DRS can help with overtaking in designated zones when race conditions allow.";
+  if (/\b(who|driver|favorite|best|legend)\b/.test(question)) return series === "NASCAR" ? "NASCAR legends include Richard Petty, Dale Earnhardt, and Jeff Gordon. Ask me about a driver by name for a quick bio." : "F1 legends include Ayrton Senna, Alain Prost, and Michael Schumacher. Ask me about a driver by name for a quick bio.";
+  return `I can help with ${series} drivers, rules, tracks, race craft, and history. What part are you curious about?`;
+};
 
 const WinnerCard = ({ seriesKey, item, loading }: { seriesKey: keyof RaceResults; item?: ResultCard; loading: boolean }) => {
   const [photo, setPhoto] = useState("");
@@ -37,6 +52,7 @@ const WinnerCard = ({ seriesKey, item, loading }: { seriesKey: keyof RaceResults
     <div className="result-divider"/><div className="champion-label">{item?.champion ? "LAST SEASON CHAMPION" : "CHAMPIONSHIP LEADER"}</div>
     <b className="champion-name">{item?.champion || item?.leader || (loading ? "Loading standings…" : "Standings currently unavailable")}</b>
     {item?.leader && item?.champion && <p className="current-leader">Current points leader: {item.leader}</p>}
+    {item?.source && <a className="result-source" href={item.source} target="_blank" rel="noreferrer">OFFICIAL RESULTS <ExternalLink size={13}/></a>}
   </article>;
 };
 
@@ -51,8 +67,6 @@ const Index = () => {
   const [garage,setGarage]=useState<string[]>(()=>JSON.parse(localStorage.getItem("trackside-garage")||"[]"));
   const [messages,setMessages]=useState<ChatMessage[]>([]);
   const [chat,setChat]=useState("");
-  const [chatError,setChatError]=useState("");
-  const [sending,setSending]=useState(false);
   const [raceResults,setRaceResults]=useState<RaceResults|null>(null);
   const [resultsLoading,setResultsLoading]=useState(true);
 
@@ -84,16 +98,12 @@ const Index = () => {
     }else setResult("Not quite — type the driver's full name and try again.");
     setGuess("");
   };
-  const sendMessage=async(event:React.FormEvent)=>{
-    event.preventDefault();const content=chat.trim();if(!content||sending)return;
-    const next=[...messages,{role:"user" as const,content}];setMessages(next);setChat("");setChatError("");setSending(true);
-    try{
-      const response=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({messages:next})});
-      const data=await response.json();
-      if(!response.ok)throw new Error(data.statusMessage||data.message||"Trackside couldn't reply. Please try again.");
-      setMessages((current)=>[...current,{role:"assistant",content:data.reply}]);
-    }catch(error){setChatError(error instanceof Error?error.message:"Trackside couldn't reply. Please try again.");}
-    finally{setSending(false);}
+  const sendMessage=(event:React.FormEvent)=>{
+    event.preventDefault();
+    const content=chat.trim();
+    if(!content)return;
+    setMessages((current)=>[...current,{role:"user",content},{role:"assistant",content:localReply(content,series)}]);
+    setChat("");
   };
   const navigate=(tab:string)=>{setActive(tab);setMenuOpen(false);};
 
@@ -110,7 +120,7 @@ const Index = () => {
       {active==="Photo challenge"&&<div className="page-content tab-page"><div className="welcome-row"><div><div className="eyebrow"><span/> {series} PADDOCK</div><h1>Photo challenge</h1><p>Recognize the driver. Type their name to collect them.</p></div></div><section className="quiz-card standalone-card"><div className="quiz-top"><div><div className="eyebrow"><Sparkles size={14}/> DRIVER CHALLENGE · {series}</div><h2>Who is this <em>driver?</em></h2></div><button className="text-link" onClick={()=>{setDriver(chooseDriver(series,driver.name));setResult("");}}>NEXT DRIVER <ChevronRight size={15}/></button></div><div className={`driver-photo ${photo?"has-photo":""}`} style={photo?{backgroundImage:`linear-gradient(0deg,rgba(18,20,23,.82),transparent 65%),url("${photo}")`}:undefined}>{photo?<span className="photo-credit">REAL DRIVER PHOTO · WIKIPEDIA</span>:<div className="photo-loading"><Flag size={35}/><span>Loading a real {series} driver photo…</span><small>If images are blocked, try the next driver.</small></div>}<div className="photo-clue"><span>HINT</span><p>{driver.clue}</p></div></div><form className="guess-form" onSubmit={submitGuess}><input value={guess} onChange={(event)=>setGuess(event.target.value)} placeholder="Type the driver's full name..." aria-label="Type the driver's full name"/><button type="submit">SUBMIT GUESS <ChevronRight size={16}/></button></form>{result&&<div className={`answer-note ${result.startsWith("Correct")?"correct":""}`}>{result.startsWith("Correct")&&<Check size={15}/>} {result}</div>}<div className="quiz-foot"><span>Correct guesses are added to your Garage</span><span>{garage.length} COLLECTED</span></div></section></div>}
       {active==="Garage"&&<div className="page-content tab-page"><div className="welcome-row"><div><div className="eyebrow"><span/> YOUR COLLECTION</div><h1>Driver garage</h1><p>Your correctly guessed drivers, saved on this device.</p></div></div>{garage.length?<div className="collection-grid">{garage.map((name)=><article className="collection-card" key={name}><div className="driver-initial">{name.split(" ").map((part)=>part[0]).join("")}</div><div><b>{name}</b><span>{drivers.find((item)=>item.name===name)?.series||"MOTORSPORT"} · COLLECTED</span></div><Trophy size={18}/></article>)}</div>:<div className="empty-state"><CarFront size={36}/><h2>Your garage is waiting</h2><p>Guess a driver's full name in Photo Challenge to collect them here.</p><button className="watch-button" onClick={()=>navigate("Photo challenge")}>GO TO PHOTO CHALLENGE</button></div>}</div>}
       {active==="Schedule"&&<div className="page-content tab-page"><div className="welcome-row"><div><div className="eyebrow"><span/> RACE CALENDAR</div><h1>Race schedule</h1><p>Schedule provided by DD12 Fans.</p></div><a className="watch-button schedule-link" href={scheduleUrl} target="_blank" rel="noreferrer">OPEN SCHEDULE <ExternalLink size={15}/></a></div><section className="schedule-frame-wrap"><iframe className="schedule-frame" src={scheduleUrl} title="DD12 Fans race schedule" loading="lazy"/><div className="frame-fallback">If the schedule doesn't load inside the app, <a href={scheduleUrl} target="_blank" rel="noreferrer">open it in a new tab <ExternalLink size={13}/></a>.</div></section></div>}
-      {active==="Trackside AI"&&<div className="page-content tab-page chat-page"><div className="welcome-row"><div><div className="eyebrow"><span/> YOUR RACING INTELLIGENCE</div><h1>Chat with <em>Trackside.</em></h1><p>Ask about NASCAR, Formula 1, drivers, race history, or strategy.</p></div></div><section className="ai-card full-chat"><div className="ai-heading"><div className="ai-icon"><Sparkles size={18}/></div><div><div className="eyebrow">CHATGPT-POWERED RACING ASSISTANT</div><h3>Trackside</h3></div><span className="online-status">READY TO CHAT</span></div><div className="full-chat-thread">{messages.length===0&&<div className="starter-message">Hi! I'm Trackside. Ask me anything about racing and I'll help you figure it out.</div>}{messages.map((message,index)=><div className={`chat-line ${message.role}`} key={`${index}-${message.role}`}><span>{message.role==="user"?"YOU":"TRACKSIDE"}</span><p>{message.content}</p></div>)}{sending&&<div className="chat-line assistant"><span>TRACKSIDE</span><p>Thinking…</p></div>}</div>{chatError&&<div className="chat-error">{chatError}{chatError.includes("API key")&&<span> The app owner needs to add an OpenAI API key to the server configuration.</span>}</div>}<form className="chat-form full-chat-form" onSubmit={sendMessage}><input value={chat} onChange={(event)=>setChat(event.target.value)} placeholder="Message Trackside..." disabled={sending}/><button aria-label="Send message" disabled={sending||!chat.trim()}><Send size={17}/></button></form><div className="ai-disclaimer">Trackside uses OpenAI to answer. Please don't share sensitive personal information.</div></section></div>}
+      {active==="Trackside AI"&&<div className="page-content tab-page chat-page"><div className="welcome-row"><div><div className="eyebrow"><span/> YOUR RACING INTELLIGENCE</div><h1>Chat with <em>Trackside.</em></h1><p>Ask about NASCAR, Formula 1, drivers, race history, or strategy.</p></div></div><section className="ai-card full-chat"><div className="ai-heading"><div className="ai-icon"><Sparkles size={18}/></div><div><div className="eyebrow">BUILT-IN RACING ASSISTANT</div><h3>Trackside</h3></div><span className="online-status">READY TO CHAT</span></div><div className="full-chat-thread">{messages.length===0&&<div className="starter-message">Hi! I'm Trackside. Ask me anything about racing and I'll help you figure it out.</div>}{messages.map((message,index)=><div className={`chat-line ${message.role}`} key={`${index}-${message.role}`}><span>{message.role==="user"?"YOU":"TRACKSIDE"}</span><p>{message.content}</p></div>)}</div><form className="chat-form full-chat-form" onSubmit={sendMessage}><input value={chat} onChange={(event)=>setChat(event.target.value)} placeholder="Message Trackside..."/><button aria-label="Send message" disabled={!chat.trim()}><Send size={17}/></button></form><div className="ai-disclaimer">Trackside uses built-in racing knowledge and works without an API key.</div></section></div>}
     </main>
   </div>;
 };
