@@ -11,16 +11,19 @@ type Props = {
   guess: string;
   answer: string;
   collectedCount: number;
+  attemptsLeft: number;
+  cooldownSeconds: number;
   messages: Message[];
   chat: string;
   onGuessChange: (value: string) => void;
   onSubmitGuess: (event: React.FormEvent) => void;
-  onNextDriver: () => void;
   onChatChange: (value: string) => void;
   onSendMessage: (event: React.FormEvent) => void;
 };
 
-const HomeDashboard = ({ series, driver, photo, guess, answer, collectedCount, messages, chat, onGuessChange, onSubmitGuess, onNextDriver, onChatChange, onSendMessage }: Props) => (
+const countdown = (seconds: number) => `${Math.floor(seconds / 3600).toString().padStart(2, "0")}:${Math.floor((seconds % 3600) / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}`;
+
+const HomeDashboard = ({ series, driver, photo, guess, answer, collectedCount, attemptsLeft, cooldownSeconds, messages, chat, onGuessChange, onSubmitGuess, onChatChange, onSendMessage }: Props) => (
   <div className="page-content tab-page home-page">
     <div className="welcome-row">
       <div>
@@ -33,15 +36,15 @@ const HomeDashboard = ({ series, driver, photo, guess, answer, collectedCount, m
       <section className="quiz-card home-quiz">
         <div className="quiz-top">
           <div><div className="eyebrow"><Sparkles size={14}/> PHOTO CHALLENGE · {series}</div><h2>Who is this <em>driver?</em></h2></div>
-          <button className="text-link" onClick={onNextDriver}>NEXT DRIVER <ChevronRight size={15}/></button>
+          <span className="attempt-count">{cooldownSeconds > 0 ? `NEXT IN ${countdown(cooldownSeconds)}` : `${attemptsLeft} TRIES LEFT`}</span>
         </div>
         <div className={photo ? "driver-photo has-photo" : "driver-photo"} style={photo ? { backgroundImage: `linear-gradient(0deg,rgba(18,20,23,.82),transparent 65%),url("${photo}")` } : undefined}>
           {photo ? <span className="photo-credit">REAL DRIVER PHOTO</span> : <div className="photo-loading"><Flag size={35}/><span>Loading a real {series} driver photo…</span></div>}
           <div className="photo-clue"><span>HINT</span><p>{driver.clue}</p></div>
         </div>
         <form className="guess-form" onSubmit={onSubmitGuess}>
-          <input value={guess} onChange={(event) => onGuessChange(event.target.value)} placeholder="Type the driver's full name..." aria-label="Type the driver's full name"/>
-          <button type="submit">SUBMIT GUESS <ChevronRight size={16}/></button>
+          <input value={guess} onChange={(event) => onGuessChange(event.target.value)} placeholder={cooldownSeconds > 0 ? "Challenge locked for one hour" : "Type the driver's full name..."} aria-label="Type the driver's full name" disabled={cooldownSeconds > 0}/>
+          <button type="submit" disabled={cooldownSeconds > 0 || !guess.trim()}>SUBMIT GUESS <ChevronRight size={16}/></button>
         </form>
         {answer && <div className={`answer-note ${answer.startsWith("Correct") ? "correct" : ""}`}>{answer.startsWith("Correct") && <Check size={15}/>} {answer}</div>}
         <div className="quiz-foot"><span>Correct guesses go in your {series} garage</span><span>{collectedCount} COLLECTED</span></div>
