@@ -69,6 +69,20 @@ const Index = () => {
   const [chat, setChat] = useState("");
   const [messages, setMessages] = useState<{ question: string; answer: string }[]>([]);
   const [active, setActive] = useState("Overview");
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const navigateTo = (name: string) => {
+    setActive(name);
+    setMenuOpen(false);
+    const targets: Record<string, string> = {
+      Overview: "#home",
+      "Ask Trackside": ".ai-card",
+      "Driver garage": ".garage-card",
+      "Photo challenge": ".quiz-card",
+      "Race hub": ".watch-section",
+    };
+    document.querySelector(targets[name])?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -104,14 +118,14 @@ const Index = () => {
   };
 
   return <div className="apex-app">
-    <aside className="sidebar">
-      <a className="brand" href="#home"><span className="brand-mark"><Flag size={23}/></span><span>TRACK<span className="brand-light">SIDE</span><small>THE RACING CLUBHOUSE</small></span></a>
+    <aside className={`sidebar ${menuOpen ? "menu-open" : ""}`}>
+      <a className="brand" href="#home" onClick={(event) => { event.preventDefault(); navigateTo("Overview"); }}><span className="brand-mark"><Flag size={23}/></span><span>TRACK<span className="brand-light">SIDE</span><small>THE RACING CLUBHOUSE</small></span></a>
       <div className="side-label">YOUR PADDOCK</div>
-      {navItems.map(({ name, icon: Icon }) => <button key={name} className={`nav-item ${active === name ? "selected" : ""}`} onClick={() => setActive(name)}><Icon size={19}/>{name}{name === "Driver garage" && <span className="nav-count">{collected.length}</span>}</button>)}
+      {navItems.map(({ name, icon: Icon }) => <button key={name} className={`nav-item ${active === name ? "selected" : ""}`} onClick={() => navigateTo(name)}><Icon size={19}/>{name}{name === "Driver garage" && <span className="nav-count">{collected.length}</span>}</button>)}
       <div className="sidebar-bottom"><div className="member-card"><div className="member-icon"><Sparkles size={19}/></div><b>Your racing co-pilot.</b><span>Every driver. Every story. Ask away.</span><div className="mini-progress"><i style={{ width: `${Math.min(100, collected.length * 5)}%` }}/></div></div><div className="profile"><div className="profile-avatar">R</div><div><b>Racing fan</b><span>{collected.length} drivers collected</span></div><ChevronRight size={16}/></div></div>
     </aside>
     <main className="main-area" id="home">
-      <header className="topbar"><button className="mobile-menu" aria-label="Open menu"><Menu/></button><div className="top-intro">Your all-access pass to motorsport</div><div className="series-toggle"><button className={series === "NASCAR" ? "active nascar" : ""} onClick={() => changeSeries("NASCAR")}>▰ &nbsp; NASCAR</button><button className={series === "F1" ? "active f1" : ""} onClick={() => changeSeries("F1")}>F1 &nbsp; FORMULA 1</button></div></header>
+      <header className="topbar"><button className="mobile-menu" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><Menu/></button><div className="top-intro">Your all-access pass to motorsport</div><div className="series-toggle"><button className={series === "NASCAR" ? "active nascar" : ""} onClick={() => changeSeries("NASCAR")}>▰ &nbsp; NASCAR</button><button className={series === "F1" ? "active f1" : ""} onClick={() => changeSeries("F1")}>F1 &nbsp; FORMULA 1</button></div></header>
       <div className="page-content">
         <section className="welcome-row"><div><div className="eyebrow"><span/> {series} PADDOCK</div><h1>Welcome to the fast lane.</h1><p>Fuel your curiosity. Know your drivers. Never miss a lap.</p></div></section>
         <div className="dashboard-grid">
